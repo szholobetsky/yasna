@@ -29,5 +29,8 @@ env/
 .DS_Store
 Thumbs.db
 
+# build artifacts
+old/
+
 # yasna index (local user data, not part of the repo)
 .yasna/
