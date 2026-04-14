@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yasna"
+version = "0.1.0"
+description = "Session search tool for AI coding agents — claude, opencode, aider, continue, nanocoder, 1bcoder"
+requires-python = ">=3.10"
+readme = {file = "README.md", content-type = "text/markdown"}
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/szholobetsky/yasna"
+Repository = "https://github.com/szholobetsky/yasna"
+
+[project.scripts]
+yasna = "yasna.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["yasna*"]
