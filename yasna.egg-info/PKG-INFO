@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: yasna
-Version: 0.1.0
-Summary: Session search tool for AI coding agents — claude, opencode, aider, continue, nanocoder, 1bcoder
-Requires-Python: >=3.10
