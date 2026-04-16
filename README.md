@@ -200,3 +200,11 @@ yasna is one of four tools that together form an **intellectual development supp
 Together they cover the full development loop: understand the codebase, find relevant history, work with AI locally, remember what was decided.
 
 The name comes from Slavic mythology. Yasna (Ясна) is the goddess who weaves the thread of fate — and memory.
+
+---
+
+## About
+
+(c) 2026 Stanislav Zholobetskyi  
+Institute for Information Recording, National Academy of Sciences of Ukraine, Kyiv  
+PhD research: «Intelligent Technology for Software Development and Maintenance Support»

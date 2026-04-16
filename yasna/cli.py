@@ -39,6 +39,9 @@ def main():
     p_find.add_argument("--global", "-g", dest="global_scope", action="store_true",
                         help="Search all sessions (ignore CWD filter)")
 
+    # about
+    sub.add_parser("about", help="Show version and authorship")
+
     # list
     p_list = sub.add_parser("list", help="List recently indexed sessions")
     p_list.add_argument("--agent", "-a", default=None)
@@ -94,6 +97,13 @@ def main():
             project = s.get("project", "?")
             title   = s.get("title", "?")
             print(f"{agent:10} {date}  [{project}]  {title}")
+
+    elif args.cmd == "about":
+        print("yasna — Session search tool for AI coding agents")
+        print()
+        print("(c) 2026 Stanislav Zholobetskyi")
+        print("Institute for Information Recording, National Academy of Sciences of Ukraine, Kyiv")
+        print("PhD research: \u00abIntelligent Technology for Software Development and Maintenance Support\u00bb")
 
     else:
         parser.print_help()
