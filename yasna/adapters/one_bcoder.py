@@ -47,6 +47,14 @@ def _discover() -> list[Path]:
         for p in root.glob("**/.1bcoder/projects/*/*"):
             if p.suffix in (".txt", ".md") and p.is_file() and p.name != "project.txt":
                 found.add(p)
+        for p in root.glob("**/.1bcoder/autosave/*"):
+            if p.suffix in (".txt", ".md") and p.is_file():
+                found.add(p)
+
+    # Global autosave
+    for p in (BCODER_HOME / "autosave").glob("*"):
+        if p.suffix in (".txt", ".md") and p.is_file():
+            found.add(p)
 
     return sorted(found)
 
