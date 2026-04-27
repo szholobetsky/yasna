@@ -9,7 +9,14 @@ Each .txt/.md file is indexed as a separate "session".
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **_):
+        return it
 
 from ..core import Session, mtime_date, scan_roots
 
@@ -18,8 +25,10 @@ BCODER_HOME = Path.home() / ".1bcoder"
 
 
 def sessions() -> list[Session]:
+    print("  1bcoder: discovering files...", file=sys.stderr, flush=True)
+    paths = _discover()
     result = []
-    for path in _discover():
+    for path in tqdm(paths, desc="  1bcoder", unit="file", leave=False, file=sys.stderr):
         s = _parse(path)
         if s:
             result.append(s)
@@ -94,6 +103,11 @@ def _parse(path: Path) -> Session | None:
     except ValueError:
         proj_dir   = str(path.parent)
 
+    try:
+        rel_path = path.relative_to(proj_dir)
+    except ValueError:
+        rel_path = Path(path.name)
+
     return Session(
         id           = sid,
         agent        = AGENT_NAME,
@@ -102,6 +116,6 @@ def _parse(path: Path) -> Session | None:
         title        = title or path.name,
         text         = text,
         source       = str(path),
-        resume_cmd   = f"/ctx load {path.name}",
+        resume_cmd   = f"/ctx load {rel_path}",
         project_path = proj_dir,
     )

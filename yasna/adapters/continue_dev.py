@@ -6,8 +6,15 @@ Format:   JSON with history[].message.{role, content[]}
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from urllib.parse import unquote
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **_):
+        return it
 
 from ..core import Session, mtime_date
 
@@ -18,10 +25,10 @@ CONTINUE_DIR  = Path.home() / ".continue" / "sessions"
 def sessions() -> list[Session]:
     if not CONTINUE_DIR.exists():
         return []
+    print("  continue: discovering files...", file=sys.stderr, flush=True)
+    paths = [p for p in CONTINUE_DIR.glob("*.json") if p.name != "sessions.json"]
     result = []
-    for path in CONTINUE_DIR.glob("*.json"):
-        if path.name == "sessions.json":
-            continue
+    for path in tqdm(paths, desc="  continue", unit="file", leave=False, file=sys.stderr):
         s = _parse(path)
         if s:
             result.append(s)

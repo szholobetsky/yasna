@@ -9,7 +9,14 @@ One file contains multiple sessions separated by:
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **_):
+        return it
 
 from ..core import Session, scan_roots
 
@@ -17,9 +24,10 @@ AGENT_NAME = "aider"
 
 
 def sessions() -> list[Session]:
+    print("  aider: discovering files...", file=sys.stderr, flush=True)
     files = _discover()
     result = []
-    for path in files:
+    for path in tqdm(files, desc="  aider", unit="file", leave=False, file=sys.stderr):
         result.extend(_parse_file(path))
     return result
 
@@ -53,8 +61,9 @@ def _parse_file(path: Path) -> list[Session]:
         content,
     )
 
-    i = 1
-    while i < len(blocks) - 1:
+    indices = list(range(1, len(blocks) - 1, 2))
+    bar = tqdm(indices, desc=f"  {path.name}", unit="session", leave=False, file=sys.stderr)
+    for i in bar:
         header = blocks[i]
         body   = blocks[i + 1]
         date_m = re.search(r"(\d{4}-\d{2}-\d{2})", header)
@@ -91,7 +100,6 @@ def _parse_file(path: Path) -> list[Session]:
                 resume_cmd   = f'aider --chat-history-file "{path}"',
                 project_path = str(path.parent),
             ))
-        i += 2
 
     return sessions_out
 

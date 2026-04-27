@@ -6,7 +6,14 @@ Format:   JSONL — each line is a message object
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **_):
+        return it
 
 from ..core import Session, mtime_date
 
@@ -17,10 +24,9 @@ CLAUDE_DIR  = Path.home() / ".claude" / "projects"
 def sessions() -> list[Session]:
     if not CLAUDE_DIR.exists():
         return []
+    paths = [p for p in CLAUDE_DIR.glob("**/*.jsonl") if "subagents" not in p.parts]
     result = []
-    for path in CLAUDE_DIR.glob("**/*.jsonl"):
-        if "subagents" in path.parts:
-            continue
+    for path in tqdm(paths, desc="  claude", unit="file", leave=False, file=sys.stderr):
         s = _parse(path)
         if s:
             result.append(s)

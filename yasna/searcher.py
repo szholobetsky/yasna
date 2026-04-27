@@ -16,13 +16,13 @@ def _cwd_filter() -> str | None:
 
 
 def _matches_project(meta: dict, cwd: str) -> bool:
-    """True if session's project_path overlaps with cwd."""
+    """True if session's project_path is the same project or a subdir of cwd."""
     pp = meta.get("project_path", "").strip()
     if not pp:
-        return True   # no project_path stored → include (don't hide)
-    pp_lower  = pp.lower().replace("\\", "/")
-    cwd_lower = cwd.lower().replace("\\", "/")
-    return pp_lower.startswith(cwd_lower) or cwd_lower.startswith(pp_lower)
+        return False  # no project_path stored → exclude from CWD-filtered results
+    pp_norm  = pp.lower().replace("\\", "/").rstrip("/")
+    cwd_norm = cwd.lower().replace("\\", "/").rstrip("/")
+    return pp_norm == cwd_norm or pp_norm.startswith(cwd_norm + "/")
 
 
 def find(query: str, agent: str | None = None, limit: int = 20,

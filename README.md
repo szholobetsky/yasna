@@ -5,15 +5,17 @@ Session search tool for AI coding agents.
 Indexes conversation history from Claude Code, opencode, continue.dev, aider, nanocoder, and 1bcoder into a single searchable store — so you can find any session by keyword, resume it instantly, and never lose track of what you discussed and where.
 
 ```bash
-yasna find "svitovyd mcp"
+yasna find "myapp mcp"
 ```
 ```
-claude     2026-04-10  [simrgl]  "svitovyd mcp server, FastMCP tools..."
-           ... | map_index, map_find, BFS trace deps sym idiff
-           -> claude --resume cc3cf9f6-6ce9-46d0-9e70-ce2b6354a975
+claude     2026-04-10  [myapp]  D:\Work\myapp
+  myapp mcp server, FastMCP tools...
+  … map_index, map_find, BFS trace deps sym idiff
+  -> claude --resume cc3cf9f6-6ce9-46d0-9e70-ce2b6354a975
 
-opencode   2026-04-08  [svitovyd]  "map_index endpoint discussion"
-           -> opencode  (session: ses_2ed3ba03...)
+opencode   2026-04-08  [myapp]  D:\Work\myapp
+  myapp mcp endpoint discussion
+  -> opencode  (session: ses_2ed3ba03...)
 ```
 
 ---
@@ -33,9 +35,9 @@ yasna solves this in one command.
 | Claude Code | `~/.claude/projects/**/*.jsonl` | full conversations, auto |
 | opencode | `~/.local/share/opencode/opencode.db` | full conversations, auto |
 | continue.dev | `~/.continue/sessions/*.json` | full conversations, auto |
-| aider | `**/.aider.chat.history.md` | full conversations, auto |
-| nanocoder | `**/.nanocoder/checkpoints/*/conversation.json` | manual (`/checkpoint create`) |
-| 1bcoder | `.1bcoder/ctx/` and `.1bcoder/projects/*/` | context files |
+| aider | `~/.aider.chat.history.md` + `<project>/.aider.chat.history.md` | full conversations, auto |
+| nanocoder | `<project>/.nanocoder/checkpoints/*/conversation.json` | manual (`/checkpoint create`) |
+| 1bcoder | `~/.1bcoder/` + `<project>/.1bcoder/` | context files (`/ctx save`, autosave) |
 
 Agents that do not store sessions locally (GitHub Copilot, Windsurf, Augment, Amazon Q) are not supported — there is nothing to index.
 
@@ -54,20 +56,29 @@ No heavy dependencies. Requires Python 3.10+. Uses only stdlib (sqlite3, pathlib
 ## Quick start
 
 ```bash
-# Index all sessions (scans all supported agents)
+# Index current project (all agents)
 yasna index
 
-# Search across indexed sessions
+# Index a specific directory
+yasna index D:\MyProject
+
+# Index everything, no CWD filter
+yasna index -g
+
+# Search current project
 yasna find "authentication middleware"
 yasna find "docker compose"
-yasna find "MAP@10"
 
-# List recently indexed sessions
-yasna list
+# Search all projects
+yasna find "MAP@10" -g
 
 # Filter by agent
 yasna find "migration" --agent claude
 yasna list --agent opencode
+
+# List recently indexed sessions
+yasna list
+yasna list -g -n 50
 ```
 
 ---
@@ -99,18 +110,23 @@ This keeps personal and work projects separate without any configuration.
 
 ## Commands
 
-### `yasna index [agent] [-g]`
+### `yasna index [path] [-r DIR] [-a agent] [-g]`
 
 Scan all agents (or one) and write indexed sessions to `~/.yasna/index/`.
 
 ```bash
-yasna index                  # all agents, CWD filter
-yasna index claude           # Claude Code only
-yasna index -g               # all agents, no filter
-yasna index opencode -g      # opencode only, no filter
+yasna index                        # current directory, all agents
+yasna index .                      # same
+yasna index D:\MyProject           # explicit project root
+yasna index claude                 # Claude Code only, current directory
+yasna index -g                     # all agents, no CWD filter
+yasna index -g claude              # Claude Code only, no filter
+yasna index --root D:\MyProject claude   # claude only, explicit root
 ```
 
-Run this periodically or after finishing a work session. Indexing is fast — it re-writes all sessions each time (no incremental tracking yet).
+The positional argument is auto-detected: if it looks like a directory path it sets the scan root; if it is an agent name it filters by agent. Use `--root`/`-r` when you need both.
+
+Run this periodically or after finishing a work session. Each run clears and rewrites the index for the current project (or globally with `-g`), so there are no stale duplicates.
 
 ### `yasna find <query> [-a agent] [-n N] [-g]`
 
@@ -137,20 +153,30 @@ yasna list -n 50 -g
 
 ## Scan roots
 
-By default yasna scans:
-- `~/.claude/projects/` — Claude Code (global, fixed)
-- `~/.local/share/opencode/opencode.db` — opencode (global, fixed)
-- `~/.continue/sessions/` — continue.dev (global, fixed)
-- `~/` and `C:/Project/` — for aider, nanocoder, 1bcoder (recursive glob)
+Global agent storage is always scanned automatically:
+- `~/.claude/projects/` — Claude Code
+- `~/.local/share/opencode/opencode.db` — opencode
+- `~/.continue/sessions/` — continue.dev
+- `~/.aider.chat.history.md` — aider (global log)
+- `~/.1bcoder/` — 1bcoder (global ctx, autosave, projects)
 
-To add more project roots (e.g. `D:/Work`), set the environment variable:
+For project-local files (`.aider.chat.history.md`, `.nanocoder/`, `.1bcoder/` inside a project), yasna scans the **current working directory** by default.
+
+To scan a different or additional directory pass it as an argument or set an environment variable:
 
 ```bash
+# Explicit path argument
+yasna index D:\MyProject
+yasna index --root D:\MyProject
+
+# Multiple roots via environment variable (path-separator-separated)
 # Windows
-set YASNA_SCAN_ROOTS=C:\Project;D:\Work\clients
+set YASNA_SCAN_ROOTS=C:\Projects\rubocop;D:\Work\client-app
+yasna index -g
 
 # Linux / macOS
 export YASNA_SCAN_ROOTS=/home/user/projects:/mnt/work
+yasna index -g
 ```
 
 ---

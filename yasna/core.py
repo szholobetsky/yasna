@@ -9,17 +9,15 @@ from pathlib import Path
 YASNA_DIR = Path.home() / ".yasna"
 INDEX_DIR  = YASNA_DIR / "index"
 
-# Additional directories to scan for session files (aider, nanocoder, etc.)
-# Override via YASNA_SCAN_ROOTS env var (colon-separated paths)
+# Directories to scan for project-local session files (.1bcoder/, .nanocoder/, etc.)
+# Override via YASNA_SCAN_ROOTS env var (path-separator-separated paths).
+# Default: current working directory only.
+# Global agent storage (~/.claude/, ~/.1bcoder/, etc.) is handled per-adapter.
 def scan_roots() -> list[Path]:
     env = os.environ.get("YASNA_SCAN_ROOTS", "")
     if env:
         return [Path(p) for p in env.split(os.pathsep) if p]
-    # Defaults: home + C:\Project if exists
-    roots = [Path.home()]
-    if Path("C:/Project").exists():
-        roots.append(Path("C:/Project"))
-    return roots
+    return [Path.cwd()]
 
 
 @dataclass

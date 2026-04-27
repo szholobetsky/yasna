@@ -7,7 +7,14 @@ Note:        Checkpoints are created manually with /checkpoint create <name>
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(it, **_):
+        return it
 
 from ..core import Session, mtime_date, scan_roots
 
@@ -15,8 +22,10 @@ AGENT_NAME = "nanocoder"
 
 
 def sessions() -> list[Session]:
+    print("  nanocoder: discovering files...", file=sys.stderr, flush=True)
+    paths = _discover()
     result = []
-    for path in _discover():
+    for path in tqdm(paths, desc="  nanocoder", unit="file", leave=False, file=sys.stderr):
         s = _parse(path)
         if s:
             result.append(s)

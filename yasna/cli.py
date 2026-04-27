@@ -1,13 +1,24 @@
 """yasna CLI.
 
 Usage:
-  yasna index [agent]                    # index all agents (or one)
-  yasna find <query> [--agent A] [-n N]  # search sessions
-  yasna list [--agent A] [-n N]          # list recent sessions
+  yasna index [path] [--root DIR] [--agent A] [-g]   # index sessions
+  yasna find  <query> [--agent A] [-n N] [-g]         # search sessions
+  yasna list  [--agent A] [-n N] [-g]                 # list recent sessions
+
+Examples:
+  yasna index                          # current directory, all agents
+  yasna index .                        # same
+  yasna index D:\\MyProject            # explicit project root
+  yasna index --root D:\\MyProject claude  # only claude, specific root
+  yasna index -g                       # all agents, no CWD filter
+  yasna find "authentication"          # search current project
+  yasna find "docker" -g               # search all projects
+  yasna find "auth" --agent claude -n 5
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 
@@ -26,8 +37,11 @@ def main():
     p_idx = sub.add_parser("index", help="Index sessions from agents")
     p_idx.add_argument(
         "agent", nargs="?", default=None,
-        help="Agent to index: claude / opencode / continue / aider / nanocoder / 1bcoder",
+        help="Agent to index: claude / opencode / continue / aider / nanocoder / 1bcoder"
+             " (or a directory path — auto-detected)",
     )
+    p_idx.add_argument("--root", "-r", metavar="DIR", default=None,
+                       help="Project root to scan (default: current directory)")
     p_idx.add_argument("--global", "-g", dest="global_scope", action="store_true",
                        help="Index all sessions (ignore CWD filter)")
 
@@ -53,9 +67,34 @@ def main():
 
     if args.cmd == "index":
         from .indexer import index_all
+
+        agent = args.agent
+        root  = args.root
+
+        # auto-detect: positional looks like a path, not an agent name
+        if agent and (os.path.isdir(agent) or agent in (".", "..")):
+            root  = agent
+            agent = None
+
+        if not root and not os.environ.get("YASNA_SCAN_ROOTS"):
+            if sys.platform == "win32":
+                example_path = "D:\\MyProject"
+                env_example  = "set YASNA_SCAN_ROOTS=D:\\proj1;D:\\proj2"
+            else:
+                example_path = "/home/user/myproject"
+                env_example  = "export YASNA_SCAN_ROOTS=/home/user/proj1:/home/user/proj2"
+            print(
+                "note: without --root or YASNA_SCAN_ROOTS, local project files\n"
+                "      (.1bcoder/, .nanocoder/, .aider.chat.history.md) are scanned\n"
+                "      only in the current directory. Global agents (claude, opencode,\n"
+                "      continue.dev) are always fully indexed.\n"
+               f"      To scan other projects: yasna index {example_path}\n"
+               f"      or: {env_example}",
+                file=sys.stderr,
+            )
         print("Indexing sessions...")
         scope = "global" if args.global_scope else "auto"
-        stats = index_all(args.agent, scope=scope)
+        stats = index_all(agent, scope=scope, root=root)
         total = 0
         for name, count in stats.items():
             if isinstance(count, int):
@@ -73,12 +112,14 @@ def main():
             print(f"no matches for: {args.query}")
             sys.exit(1)
         for r in results:
-            agent   = r.get("agent", "?")
-            date    = r.get("date", "?")
-            project = r.get("project", "?")
-            title   = r.get("title", "?")
-            resume  = r.get("resume", "")
-            print(f"\n{agent:10} {date}  [{project}]  {title}")
+            agent    = r.get("agent", "?")
+            date     = r.get("date", "?")
+            project  = r.get("project", "?")
+            title    = r.get("title", "?")
+            resume   = r.get("resume", "")
+            proj_path = r.get("project_path", "")
+            print(f"\n{agent:10} {date}  [{project}]  {proj_path}")
+            print(f"  {title}")
             for s in r.get("snippets", []):
                 print(f"  … {s[:130]}")
             if resume:
@@ -92,11 +133,13 @@ def main():
             print("No sessions indexed. Run: yasna index")
             sys.exit(1)
         for s in sessions:
-            agent   = s.get("agent", "?")
-            date    = s.get("date", "?")
-            project = s.get("project", "?")
-            title   = s.get("title", "?")
-            print(f"{agent:10} {date}  [{project}]  {title}")
+            agent     = s.get("agent", "?")
+            date      = s.get("date", "?")
+            project   = s.get("project", "?")
+            title     = s.get("title", "?")
+            proj_path = s.get("project_path", "")
+            print(f"{agent:10} {date}  [{project}]  {proj_path}")
+            print(f"  {title}")
 
     elif args.cmd == "about":
         print("yasna — Session search tool for AI coding agents")
