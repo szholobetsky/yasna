@@ -1,3 +1,5 @@
+![yasna](images/yasna.png)
+
 # yasna
 
 Session search tool for AI coding agents.
