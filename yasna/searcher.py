@@ -80,7 +80,7 @@ def find(query: str, agent: str | None = None, limit: int = 20,
             if len(snippets) >= 3:
                 break
 
-        results.append({**meta, "snippets": snippets})
+        results.append({**meta, "snippets": snippets, "path": str(path)})
         if len(results) >= limit:
             break
 
@@ -113,6 +113,6 @@ def list_sessions(agent: str | None = None, limit: int = 20,
         meta = read_meta(p)
         if active_cwd and not _matches_project(meta, active_cwd):
             continue
-        results.append(meta)
+        results.append({**meta, "path": str(p)})
 
     return results

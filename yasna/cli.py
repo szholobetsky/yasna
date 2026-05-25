@@ -118,12 +118,15 @@ def main():
             title    = r.get("title", "?")
             resume   = r.get("resume", "")
             proj_path = r.get("project_path", "")
+            fpath    = r.get("path", "")
             print(f"\n{agent:10} {date}  [{project}]  {proj_path}")
             print(f"  {title}")
             for s in r.get("snippets", []):
                 print(f"  … {s[:130]}")
             if resume:
                 print(f"  -> {resume}")
+            if fpath:
+                print(f"  # {fpath}")
 
     elif args.cmd == "list":
         from .searcher import list_sessions
@@ -138,8 +141,11 @@ def main():
             project   = s.get("project", "?")
             title     = s.get("title", "?")
             proj_path = s.get("project_path", "")
+            fpath     = s.get("path", "")
             print(f"{agent:10} {date}  [{project}]  {proj_path}")
             print(f"  {title}")
+            if fpath:
+                print(f"  # {fpath}")
 
     elif args.cmd == "about":
         print("yasna — Session search tool for AI coding agents")

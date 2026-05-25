@@ -116,6 +116,6 @@ def _parse(path: Path) -> Session | None:
         title        = title or path.name,
         text         = text,
         source       = str(path),
-        resume_cmd   = f"/ctx load {rel_path}",
+        resume_cmd   = f"1bcoder --ctx {path}",
         project_path = proj_dir,
     )

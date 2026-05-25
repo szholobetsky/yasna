@@ -5,6 +5,7 @@ Each adapter module exposes:
     def sessions() -> list[Session]
 """
 from . import claude, opencode, continue_dev, aider, nanocoder, one_bcoder
+from . import gemini, codex, copilot
 
 ALL: dict = {
     "claude":    claude,
@@ -13,4 +14,7 @@ ALL: dict = {
     "aider":     aider,
     "nanocoder": nanocoder,
     "1bcoder":   one_bcoder,
+    "gemini":    gemini,
+    "codex":     codex,
+    "copilot":   copilot,
 }
