@@ -27,10 +27,15 @@ except ImportError:
     def tqdm(it, **_):
         return it
 
+import os
+
 from ..core import Session, mtime_date
 
 AGENT_NAME  = "gemini"
 GEMINI_DIR  = Path.home() / ".gemini" / "tmp"
+
+_SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv',
+              '.tox', 'dist', 'build', '.idea', '.vs', 'target'}
 
 
 def sessions() -> list[Session]:
@@ -52,6 +57,54 @@ def _discover() -> list[Path]:
         for p in GEMINI_DIR.glob(f"*/chats/session-{ext}"):
             found.add(p)
     return sorted(found)
+
+
+def _project_search_roots() -> list[Path]:
+    """Roots to search for project directories by name."""
+    env = os.environ.get("YASNA_SCAN_ROOTS", "")
+    if env:
+        return [Path(p) for p in env.split(os.pathsep) if p]
+    roots: list[Path] = [Path.cwd()]
+    for candidate in (Path("C:/Project"), Path.home() / "Projects",
+                      Path.home() / "projects", Path.home() / "dev"):
+        if candidate.exists() and candidate not in roots:
+            roots.append(candidate)
+    return roots
+
+
+def _resolve_project_path(proj_dir_name: str, max_depth: int = 4) -> str:
+    """Find the real filesystem path for a Gemini project dir name (case-insensitive)."""
+    name_lower = proj_dir_name.lower()
+    # Skip obviously hash-like names (40+ hex chars) — unresolvable
+    if len(name_lower) >= 40 and all(c in '0123456789abcdef' for c in name_lower):
+        return ""
+    # Fast path: cwd itself or its immediate parent
+    cwd = Path.cwd()
+    if cwd.name.lower() == name_lower:
+        return str(cwd)
+    # Search configured/common roots
+    for root in _project_search_roots():
+        result = _find_dir(root, name_lower, max_depth)
+        if result:
+            return result
+    return ""
+
+
+def _find_dir(base: Path, name_lower: str, depth: int) -> str:
+    if depth <= 0:
+        return ""
+    try:
+        for p in base.iterdir():
+            if not p.is_dir() or p.name in _SKIP_DIRS or p.name.startswith('.'):
+                continue
+            if p.name.lower() == name_lower:
+                return str(p)
+            found = _find_dir(p, name_lower, depth - 1)
+            if found:
+                return found
+    except (PermissionError, OSError):
+        pass
+    return ""
 
 
 def _parse(path: Path) -> Session | None:
@@ -93,17 +146,18 @@ def _parse_json(path: Path) -> Session | None:
     if not turns:
         return None
 
-    proj_hash = path.parent.parent.name
+    proj_dir = path.parent.parent.name
+    project_path = _resolve_project_path(proj_dir)
     return Session(
         id           = f"gemini-{path.stem}",
         agent        = AGENT_NAME,
         date         = mtime_date(path),
-        project      = proj_hash[:32],
+        project      = proj_dir[:32],
         title        = title or "(untitled)",
         text         = "\n".join(turns),
         source       = str(path),
         resume_cmd   = f"gemini  (session: {path.stem})",
-        project_path = "",
+        project_path = project_path,
     )
 
 
@@ -113,6 +167,7 @@ def _parse_jsonl(path: Path) -> Session | None:
     turns = []
     title = ""
     date  = ""
+    session_id = ""
     try:
         with open(path, encoding="utf-8", errors="ignore") as f:
             for line in f:
@@ -128,11 +183,13 @@ def _parse_jsonl(path: Path) -> Session | None:
                 if "$set" in obj and len(obj) == 1:
                     continue
 
-                msg_type = obj.get("type", "")
-
-                # first-line metadata — grab date
+                # first-line metadata
+                if not session_id and obj.get("sessionId"):
+                    session_id = obj["sessionId"]
                 if not date and obj.get("startTime"):
                     date = obj["startTime"][:10]
+
+                msg_type = obj.get("type", "")
 
                 if msg_type == "user":
                     content = obj.get("content", [])
@@ -160,6 +217,9 @@ def _parse_jsonl(path: Path) -> Session | None:
         return None
 
     proj_dir = path.parent.parent.name
+    project_path = _resolve_project_path(proj_dir)
+    resume_cmd = (f'gemini --resume "{session_id}"' if session_id
+                  else f"gemini  (session: {path.stem})")
     return Session(
         id           = f"gemini-{path.stem}",
         agent        = AGENT_NAME,
@@ -168,8 +228,8 @@ def _parse_jsonl(path: Path) -> Session | None:
         title        = title or "(untitled)",
         text         = "\n".join(turns),
         source       = str(path),
-        resume_cmd   = f"gemini  (session: {path.stem})",
-        project_path = "",
+        resume_cmd   = resume_cmd,
+        project_path = project_path,
     )
 
 
