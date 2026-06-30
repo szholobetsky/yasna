@@ -1,4 +1,4 @@
-![yasna](images/yasna.png)
+![yasna](https://raw.githubusercontent.com/szholobetsky/simrgl/main/images/logo/yasna.png)
 
 # yasna
 
