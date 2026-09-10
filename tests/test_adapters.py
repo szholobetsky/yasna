@@ -105,3 +105,153 @@ def test_one_bcoder_parses_ctx_file(tmp_path, monkeypatch):
     sessions = one_bcoder.sessions()
     assert len(sessions) == 1
     assert "JWT" in sessions[0].text
+
+
+# ── kiro adapter ──────────────────────────────────────────────────────────────
+
+def test_kiro_parses_session(tmp_path):
+    from yasna.adapters.kiro import _parse
+    meta_path = tmp_path / "sess1.json"
+    meta_path.write_text(json.dumps({
+        "session_id": "sess1",
+        "cwd": "C:\\Projects\\myapp",
+        "created_at": "2026-09-08T21:04:35.368719600Z",
+        "title": None,
+    }), encoding="utf-8")
+    jsonl_path = tmp_path / "sess1.jsonl"
+    jsonl_path.write_text(
+        json.dumps({"kind": "Prompt", "data": {"content": [{"kind": "text", "data": "how does login work?"}]}}) + "\n"
+        + json.dumps({"kind": "AssistantMessage", "data": {"content": [
+            {"kind": "thinking", "data": {"text": ""}},
+            {"kind": "text", "data": "It uses JWT tokens."},
+        ]}}) + "\n",
+        encoding="utf-8",
+    )
+    s = _parse(meta_path)
+    assert s is not None
+    assert s.agent == "kiro"
+    assert s.project == "myapp"
+    assert s.date == "2026-09-08"
+    assert "JWT" in s.text
+    assert "login" in s.title.lower()
+    assert "sess1" in s.resume_cmd
+
+
+def test_kiro_skips_empty_transcript(tmp_path):
+    from yasna.adapters.kiro import _parse
+    meta_path = tmp_path / "sess2.json"
+    meta_path.write_text(json.dumps({"session_id": "sess2", "cwd": "C:\\Users\\stasz"}), encoding="utf-8")
+    (tmp_path / "sess2.jsonl").write_text("", encoding="utf-8")
+    assert _parse(meta_path) is None
+
+
+# ── codex adapter ─────────────────────────────────────────────────────────────
+
+def test_codex_parses_rollout(tmp_path):
+    from yasna.adapters.codex import _parse
+    rollout = tmp_path / "rollout-2026-09-10T22-16-47-01a08cc0-4933.jsonl"
+    lines = [
+        {"type": "session_meta", "payload": {"session_id": "01a08cc0-4933", "cwd": "C:\\Projects\\myapp"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "developer",
+            "content": [{"type": "input_text", "text": "system instructions"}]}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+            "content": [{"type": "input_text", "text": "<environment_context><cwd>C:\\Projects\\myapp</cwd></environment_context>"}]}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+            "content": [{"type": "input_text", "text": "how does login work?"}]}},
+        {"type": "response_item", "payload": {"type": "custom_tool_call", "id": "x"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+            "content": [{"type": "output_text", "text": "It uses JWT tokens."}]}},
+    ]
+    rollout.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
+    s = _parse(rollout)
+    assert s is not None
+    assert s.agent == "codex"
+    assert s.project == "myapp"
+    assert "JWT" in s.text
+    assert "environment_context" not in s.text
+    assert "login" in s.title.lower()
+    assert s.resume_cmd == "codex resume 01a08cc0-4933"
+
+
+def test_codex_skips_session_with_only_environment_context(tmp_path):
+    from yasna.adapters.codex import _parse
+    rollout = tmp_path / "rollout-empty.jsonl"
+    lines = [
+        {"type": "session_meta", "payload": {"session_id": "empty1", "cwd": "C:\\Users\\stasz"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+            "content": [{"type": "input_text", "text": "<environment_context>only this</environment_context>"}]}},
+    ]
+    rollout.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
+    assert _parse(rollout) is None
+
+
+# ── copilot adapter ───────────────────────────────────────────────────────────
+
+def test_copilot_parses_events(tmp_path):
+    from yasna.adapters.copilot import _parse
+    session_dir = tmp_path / "session-state" / "abc123"
+    session_dir.mkdir(parents=True)
+    events = session_dir / "events.jsonl"
+    lines = [
+        {"type": "session.start", "data": {"context": {"cwd": "C:\\Projects\\myapp"}}},
+        {"type": "session.model_change", "data": {"newModel": "gpt-5-mini"}},
+        {"type": "user.message", "data": {"content": "how does login work?"}},
+        {"type": "tool.execution_start", "data": {"toolName": "read_file"}},
+        {"type": "assistant.message", "data": {"content": ""}},
+        {"type": "assistant.message", "data": {"content": "It uses JWT tokens."}},
+    ]
+    events.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
+    s = _parse(events)
+    assert s is not None
+    assert s.agent == "copilot"
+    assert s.project == "myapp"
+    assert "JWT" in s.text
+    assert "login" in s.title.lower()
+    assert s.resume_cmd == "copilot --resume=abc123"
+
+
+def test_copilot_skips_session_with_no_messages(tmp_path):
+    from yasna.adapters.copilot import _parse
+    session_dir = tmp_path / "session-state" / "empty1"
+    session_dir.mkdir(parents=True)
+    events = session_dir / "events.jsonl"
+    lines = [{"type": "session.start", "data": {"context": {"cwd": "C:\\Users\\stasz"}}}]
+    events.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
+    assert _parse(events) is None
+
+
+# ── pi adapter ────────────────────────────────────────────────────────────────
+
+def test_pi_parses_session(tmp_path):
+    from yasna.adapters.pi import _parse
+    session_dir = tmp_path / "--C--Projects-myapp--"
+    session_dir.mkdir(parents=True)
+    session_file = session_dir / "2026-08-21T16-05-37-079Z_abc123.jsonl"
+    lines = [
+        {"type": "session", "id": "abc123", "timestamp": "2026-08-21T16:05:37.079Z", "cwd": "c:\\Projects\\myapp"},
+        {"type": "model_change", "provider": "ollama", "modelId": "qwen2.5-coder:7b"},
+        {"type": "message", "message": {"role": "user",
+            "content": [{"type": "text", "text": "how does login work?"}]}},
+        {"type": "message", "message": {"role": "assistant",
+            "content": [{"type": "thinking", "text": "let me check"},
+                        {"type": "toolCall", "id": "c1", "name": "read", "arguments": {}},
+                        {"type": "text", "text": "It uses JWT tokens."}]}},
+    ]
+    session_file.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
+    s = _parse(session_file)
+    assert s is not None
+    assert s.agent == "pi"
+    assert s.project == "myapp"
+    assert "JWT" in s.text
+    assert "login" in s.title.lower()
+    assert s.resume_cmd == "pi --session abc123"
+
+
+def test_pi_skips_session_with_no_messages(tmp_path):
+    from yasna.adapters.pi import _parse
+    session_dir = tmp_path / "--C--Users-stasz--"
+    session_dir.mkdir(parents=True)
+    session_file = session_dir / "2026-08-21T16-05-37-079Z_empty1.jsonl"
+    lines = [{"type": "session", "id": "empty1", "cwd": "c:\\Users\\stasz"}]
+    session_file.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
+    assert _parse(session_file) is None

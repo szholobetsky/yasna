@@ -4,7 +4,7 @@
 
 Session search tool for AI coding agents.
 
-Indexes conversation history from Claude Code, opencode, continue.dev, aider, nanocoder, and 1bcoder into a single searchable store — so you can find any session by keyword, resume it instantly, and never lose track of what you discussed and where.
+Indexes conversation history from Claude Code, opencode, continue.dev, aider, nanocoder, 1bcoder, and Kiro CLI into a single searchable store — so you can find any session by keyword, resume it instantly, and never lose track of what you discussed and where.
 
 ```bash
 yasna find "myapp mcp"
@@ -40,6 +40,8 @@ yasna solves this in one command.
 | aider | `~/.aider.chat.history.md` + `<project>/.aider.chat.history.md` | full conversations, auto |
 | nanocoder | `<project>/.nanocoder/checkpoints/*/conversation.json` | manual (`/checkpoint create`) |
 | 1bcoder | `~/.1bcoder/` + `<project>/.1bcoder/` | context files (`/ctx save`, autosave) |
+| Kiro CLI | `~/.kiro/sessions/cli/*.json` + `*.jsonl` | full conversations, auto |
+| Pi | `~/.pi/agent/sessions/<sanitized-cwd>/*.jsonl` | full conversations, auto |
 
 Agents that do not store sessions locally (GitHub Copilot, Windsurf, Augment, Amazon Q) are not supported — there is nothing to index.
 
@@ -161,6 +163,7 @@ Global agent storage is always scanned automatically:
 - `~/.continue/sessions/` — continue.dev
 - `~/.aider.chat.history.md` — aider (global log)
 - `~/.1bcoder/` — 1bcoder (global ctx, autosave, projects)
+- `~/.kiro/sessions/cli/` — Kiro CLI (global)
 
 For project-local files (`.aider.chat.history.md`, `.nanocoder/`, `.1bcoder/` inside a project), yasna scans the **current working directory** by default.
 

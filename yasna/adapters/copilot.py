@@ -1,13 +1,15 @@
 """GitHub Copilot CLI adapter.
 
 Locations:
-  ~/.copilot/session-state/<session-id>/events.jsonl   — current session logs
-  ~/.copilot/history-session-state/<session-id>/events.jsonl  — legacy (auto-migrated)
+  ~/.copilot/session-state/<session-id>/events.jsonl   — session event log
 
-Format: JSONL event log. Relevant event types:
-  {"type": "user_message",   "message": "..."}
-  {"type": "agent_message",  "message": "..."}   or  "response"/"assistant_message"
-  {"type": "message",        "role": "user"|"assistant", "content": "..."}
+Format: JSONL event log, one event per line, real payload nested under "data":
+  {"type": "session.start",       "data": {"context": {"cwd": "...", ...}, ...}}
+  {"type": "user.message",        "data": {"content": "<plain text>", ...}}
+  {"type": "assistant.message",   "data": {"content": "<plain text>", ...}}   — often "" for
+                                                                                 tool-only turns
+Everything else (model.*, tool.*, permission.*, session.usage_checkpoint, ...) is internal
+plumbing with no standalone user-facing text and is skipped.
 """
 from __future__ import annotations
 
@@ -25,11 +27,7 @@ from ..core import Session, mtime_date
 
 AGENT_NAME   = "copilot"
 COPILOT_DIR  = Path.home() / ".copilot"
-
-_SESSION_ROOTS = [
-    COPILOT_DIR / "session-state",
-    COPILOT_DIR / "history-session-state",
-]
+SESSIONS_DIR = COPILOT_DIR / "session-state"
 
 
 def sessions() -> list[Session]:
@@ -46,17 +44,15 @@ def sessions() -> list[Session]:
 
 
 def _discover() -> list[Path]:
-    found: set[Path] = set()
-    for root in _SESSION_ROOTS:
-        if root.exists():
-            for p in root.glob("**/events.jsonl"):
-                found.add(p)
-    return sorted(found)
+    if not SESSIONS_DIR.exists():
+        return []
+    return sorted(SESSIONS_DIR.glob("*/events.jsonl"))
 
 
 def _parse(path: Path) -> Session | None:
     turns: list[str] = []
     title = ""
+    cwd = ""
     try:
         with open(path, encoding="utf-8", errors="ignore") as f:
             for line in f:
@@ -68,7 +64,25 @@ def _parse(path: Path) -> Session | None:
                 except json.JSONDecodeError:
                     continue
 
-                text, role = _extract(obj)
+                event_type = obj.get("type", "")
+                data = obj.get("data", {})
+                if not isinstance(data, dict):
+                    continue
+
+                if event_type == "session.start" and not cwd:
+                    cwd = data.get("context", {}).get("cwd", "")
+                    continue
+
+                if event_type == "user.message":
+                    text = data.get("content", "")
+                    role = "user"
+                elif event_type == "assistant.message":
+                    text = data.get("content", "")
+                    role = "assistant"
+                else:
+                    continue
+
+                text = text.strip() if isinstance(text, str) else ""
                 if text:
                     turns.append(f"[{role}] {text}")
                     if not title and role == "user":
@@ -79,48 +93,17 @@ def _parse(path: Path) -> Session | None:
     if not turns:
         return None
 
-    # session-id is the parent directory name
-    session_id_dir = path.parent.name
-    sid = f"copilot-{session_id_dir[:24]}"
+    session_id = path.parent.name
+    project = Path(cwd).name if cwd else session_id[:32]
 
     return Session(
-        id           = sid,
+        id           = f"copilot-{session_id}",
         agent        = AGENT_NAME,
         date         = mtime_date(path),
-        project      = session_id_dir[:32],
+        project      = project,
         title        = title or "(untitled)",
         text         = "\n".join(turns),
         source       = str(path),
-        resume_cmd   = f"gh copilot  (session: {session_id_dir[:16]})",
-        project_path = "",
+        resume_cmd   = f"copilot --resume={session_id}",
+        project_path = cwd,
     )
-
-
-def _extract(obj: dict) -> tuple[str, str]:
-    """Return (text, role) from any known Copilot event shape."""
-    event_type = obj.get("type", "")
-
-    # user message variants
-    if event_type in ("user_message", "human_message"):
-        return obj.get("message", "").strip(), "user"
-
-    # assistant/agent message variants
-    if event_type in ("agent_message", "assistant_message", "response", "copilot_message"):
-        msg = obj.get("message", obj.get("content", obj.get("text", "")))
-        return msg.strip() if isinstance(msg, str) else "", "assistant"
-
-    # generic {"type": "message", "role": "...", "content": "..."}
-    if event_type == "message" or "role" in obj:
-        role = obj.get("role", "assistant")
-        norm = "assistant" if role in ("assistant", "model", "copilot") else "user"
-        content = obj.get("content", obj.get("message", ""))
-        if isinstance(content, str):
-            return content.strip(), norm
-        if isinstance(content, list):
-            text = " ".join(
-                c.get("text", "") for c in content
-                if isinstance(c, dict) and c.get("text", "").strip()
-            ).strip()
-            return text, norm
-
-    return "", "user"

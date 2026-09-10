@@ -1,13 +1,19 @@
 """OpenAI Codex CLI adapter.
 
 Locations:
-  ~/.codex/history.jsonl                         — rolling history
-  ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl   — per-session logs
+  ~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<session-id>.jsonl   — per-session logs
 
-Format: JSONL. Two relevant event types:
-  {"type": "user_message", "message": "<text>"}
-  {"type": "message", "role": "assistant", "content": [{"type":"output_text","text":"..."}]}
-  {"role": "user"|"assistant", "content": "..."}   — simpler variant
+Format (current, CLI v0.154+): JSONL, one event per line.
+  {"type": "session_meta", "payload": {"session_id": "...", "cwd": "..."}}
+  {"type": "response_item", "payload": {"type": "message", "role": "user"|"assistant"|"developer",
+                                          "content": [{"type": "input_text"|"output_text", "text": "..."}]}}
+Other payload types (custom_tool_call, reasoning, ...) carry no plain text and are skipped.
+"~/.codex/history.jsonl" (user prompts only, no assistant replies) is intentionally not used —
+its content is a strict subset of the rollout files.
+
+Note: does NOT honor a $CODEX_HOME override — other tools (e.g. multi-agent orchestrators) have
+been observed setting that env var globally to redirect Codex into a sandboxed runtime directory
+that holds no real session history. The genuine session store is always at ~/.codex/sessions/.
 """
 from __future__ import annotations
 
@@ -24,9 +30,7 @@ except ImportError:
 from ..core import Session, mtime_date
 
 AGENT_NAME = "codex"
-CODEX_DIR  = Path(
-    __import__("os").environ.get("CODEX_HOME", str(Path.home() / ".codex"))
-)
+CODEX_DIR  = Path.home() / ".codex"
 
 
 def sessions() -> list[Session]:
@@ -43,18 +47,14 @@ def sessions() -> list[Session]:
 
 
 def _discover() -> list[Path]:
-    found = set()
-    h = CODEX_DIR / "history.jsonl"
-    if h.exists():
-        found.add(h)
-    for p in (CODEX_DIR / "sessions").glob("**/rollout-*.jsonl"):
-        found.add(p)
-    return sorted(found)
+    return sorted((CODEX_DIR / "sessions").glob("**/rollout-*.jsonl"))
 
 
 def _parse(path: Path) -> Session | None:
     turns: list[str] = []
     title = ""
+    cwd = ""
+    session_id = ""
     try:
         with open(path, encoding="utf-8", errors="ignore") as f:
             for line in f:
@@ -64,6 +64,12 @@ def _parse(path: Path) -> Session | None:
                 try:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+
+                if obj.get("type") == "session_meta":
+                    meta = obj.get("payload", {})
+                    cwd = cwd or meta.get("cwd", "")
+                    session_id = session_id or meta.get("session_id", "")
                     continue
 
                 text, role = _extract(obj)
@@ -88,38 +94,48 @@ def _parse(path: Path) -> Session | None:
                 pass
             break
 
-    sid = f"codex-{path.stem}-{abs(hash(str(path))) % 100000}"
+    project    = Path(cwd).name if cwd else path.parent.name
+    session_id = session_id or path.stem
+
     return Session(
-        id           = sid,
+        id           = f"codex-{session_id}",
         agent        = AGENT_NAME,
         date         = date,
-        project      = path.parent.name,
+        project      = project,
         title        = title or "(untitled)",
         text         = "\n".join(turns),
         source       = str(path),
-        resume_cmd   = f"codex  (log: {path.name})",
-        project_path = "",
+        resume_cmd   = f"codex resume {session_id}",
+        project_path = cwd,
     )
 
 
 def _extract(obj: dict) -> tuple[str, str]:
-    """Return (text, role) from any known event shape."""
-    # shape 1: {"type": "user_message", "message": "..."}
-    if obj.get("type") == "user_message":
-        return obj.get("message", "").strip(), "user"
+    """Return (text, role) from a response_item message event; ("", "") for anything else."""
+    if obj.get("type") != "response_item":
+        return "", ""
 
-    # shape 2: {"type": "message", "role": "...", "content": [...]}
-    if obj.get("type") == "message" or "role" in obj:
-        role = obj.get("role", "assistant")
-        norm = "assistant" if role == "assistant" else "user"
-        content = obj.get("content", "")
-        if isinstance(content, str):
-            return content.strip(), norm
-        if isinstance(content, list):
-            text = " ".join(
-                c.get("text", "") for c in content
-                if isinstance(c, dict) and c.get("text", "").strip()
-            ).strip()
-            return text, norm
+    payload = obj.get("payload", {})
+    if payload.get("type") != "message":
+        return "", ""
 
-    return "", "user"
+    role = payload.get("role", "")
+    if role not in ("user", "assistant"):
+        return "", ""
+
+    content = payload.get("content", [])
+    if isinstance(content, list):
+        text = " ".join(
+            c.get("text", "") for c in content
+            if isinstance(c, dict) and c.get("text", "").strip()
+        ).strip()
+    elif isinstance(content, str):
+        text = content.strip()
+    else:
+        text = ""
+
+    # synthetic environment-context block injected by the CLI itself, not the human
+    if role == "user" and text.startswith("<environment_context>"):
+        return "", ""
+
+    return text, role
