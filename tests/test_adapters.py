@@ -255,3 +255,60 @@ def test_pi_skips_session_with_no_messages(tmp_path):
     lines = [{"type": "session", "id": "empty1", "cwd": "c:\\Users\\stasz"}]
     session_file.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
     assert _parse(session_file) is None
+
+
+# ── antigravity adapter ───────────────────────────────────────────────────────
+
+def _agy_conv(root, cid, steps):
+    logs = root / "brain" / cid / ".system_generated" / "logs"
+    logs.mkdir(parents=True)
+    (logs / "transcript_full.jsonl").write_text(
+        "\n".join(json.dumps(s, ensure_ascii=False) for s in steps), encoding="utf-8")
+    return root / "brain" / cid
+
+
+def test_antigravity_parses_conversation(tmp_path, monkeypatch):
+    from yasna.adapters import antigravity
+    monkeypatch.setattr(antigravity, "AGY_DIR", tmp_path)
+    _agy_conv(tmp_path, "c1", [
+        {"step_index": "0", "source": "USER_EXPLICIT", "type": "USER_INPUT",
+         "content": "<USER_REQUEST>\nhow to use sqlfluff?\n</USER_REQUEST>\n"
+                    "<ADDITIONAL_METADATA>\nThe current local time is: 2026-10-24T11:28:00+03:00.\n</ADDITIONAL_METADATA>"},
+        {"step_index": "1", "source": "MODEL", "type": "PLANNER_RESPONSE",
+         "tool_calls": [{"name": "run_command", "args": {"CommandLine": "dir", "Cwd": "C:\Other"}},
+                        {"name": "search_web", "args": {"query": "sqlfluff dbt templater"}}]},
+        {"step_index": "2", "source": "MODEL", "type": "GENERIC", "content": "Command output: noise"},
+        {"step_index": "3", "source": "MODEL", "type": "PLANNER_RESPONSE", "content": "SQLFluff is a SQL linter."},
+    ])
+    (tmp_path / "history.jsonl").write_text("\n".join(json.dumps(h) for h in [
+        {"display": "how to use sqlfluff?", "timestamp": 1, "workspace": "C:\Projects\shop"},
+        {"display": "and dbt?", "timestamp": 2, "workspace": "C:\Projects\shop", "conversationId": "c1"},
+    ]), encoding="utf-8")
+    [s] = antigravity.sessions()
+    assert s.agent == "antigravity"
+    assert s.title == "how to use sqlfluff?"
+    assert s.project == "shop" and s.project_path == "C:\Projects\shop"
+    assert "SQLFluff is a SQL linter." in s.text
+    assert "[search] sqlfluff dbt templater" in s.text
+    assert "ADDITIONAL_METADATA" not in s.text and "noise" not in s.text
+    assert s.resume_cmd == "agy --conversation c1"
+
+
+def test_antigravity_workspace_falls_back_to_cwd(tmp_path, monkeypatch):
+    from yasna.adapters import antigravity
+    monkeypatch.setattr(antigravity, "AGY_DIR", tmp_path)
+    _agy_conv(tmp_path, "c2", [
+        {"type": "USER_INPUT", "content": "<USER_REQUEST>\nfind papers\n</USER_REQUEST>"},
+        {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "run_command", "args": {"Cwd": "C:\Projects\MZVO"}}]},
+        {"type": "ERROR_MESSAGE", "error": "RESOURCE_EXHAUSTED (code 429)"},
+    ])
+    [s] = antigravity.sessions()
+    assert s.project == "MZVO"
+    assert "429" not in s.text
+
+
+def test_antigravity_skips_conversation_without_transcript(tmp_path, monkeypatch):
+    from yasna.adapters import antigravity
+    monkeypatch.setattr(antigravity, "AGY_DIR", tmp_path)
+    (tmp_path / "brain" / "c3" / "scratch").mkdir(parents=True)
+    assert antigravity.sessions() == []
